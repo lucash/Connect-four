@@ -8,73 +8,94 @@ exports.client_challenge = (otherId) !->
 	Db.shared.set 'games', gameId,
 		player0: Plugin.userId()
 		player1: +otherId
-		state: 'challenge'
-		board: {
-			0: {0:'wr', 1:'wn', 2:'wb', 3:'wq', 4:'wk', 5:'wb', 6:'wn', 7:'wr'},
-			1: {0:'wp', 1:'wp', 2:'wp', 3:'wp', 4:'wp', 5:'wp', 6:'wp', 7:'wp'},
-			6: {0:'bp', 1:'bp', 2:'bp', 3:'bp', 4:'bp', 5:'bp', 6:'bp', 7:'bp'},
-			7: {0:'br', 1:'bn', 2:'bb', 3:'bq', 4:'bk', 5:'bb', 6:'bn', 7:'br'}
-		}
-		castling:
-			w: {east: true, west: true}
-			b: {east: true, west: true}
-		turn: 'w'
-		move: 0
-		log: {}
-
-	Db.personal(Plugin.userId()).set 'gameId', gameId
-	Db.personal(otherId).set 'gameId', gameId
-
+		list0: Plugin.userId()
+		list1: +otherId
+		
 	Event.create
 		unit: 'accept'
 		text: "Chess: #{Plugin.userName()} challenged you!"
 		include: [otherId]
 
 
-exports.client_cancel = !->
-	gameId = Db.personal(Plugin.userId()).get 'gameId'
+exports.client_cancel = cancel = (gameId) !->
 	game = Db.shared.ref 'games', gameId
-	state = game.get('state')
-	if state is 'challenge'
-		# cancel challenge by player0 or reject challenge by player1
-		game.set 'state', 'reject'
-	else if state is 'play'
-		game.set 'state', 'resign'
-	else
-		# affirm cancel by other
-		Db.shared.remove 'games', gameId
-	Db.personal(Plugin.userId()).remove 'gameId'
+	if game.get('list0') is Plugin.userId()
+		game.remove 'list0'
+	else if game.get('list1') is Plugin.userId()
+		game.remove 'list1'
 
-exports.client_accept = !->
-	gameId = Db.personal(Plugin.userId()).get 'gameId'
+exports.client_accept = (gameId) !->
 	game = Db.shared.ref 'games', gameId
-	if game.get('state') is 'challenge'
-		game.set 'state', 'play'
-		game.set 'playerw', player0 = game.get('player0')
-		game.set 'playerb', game.get('player1')
-		game.remove 'player0'
-		game.remove 'player1'
+	if !game.get('turn')
+		swap = Math.random()>.5
+
+		game.merge
+			board: {
+				0: {0:'wr', 1:'wn', 2:'wb', 3:'wq', 4:'wk', 5:'wb', 6:'wn', 7:'wr'},
+				1: {0:'wp', 1:'wp', 2:'wp', 3:'wp', 4:'wp', 5:'wp', 6:'wp', 7:'wp'},
+				6: {0:'bp', 1:'bp', 2:'bp', 3:'bp', 4:'bp', 5:'bp', 6:'bp', 7:'bp'},
+				7: {0:'br', 1:'bn', 2:'bb', 3:'bq', 4:'bk', 5:'bb', 6:'bn', 7:'br'}
+			}
+			castling:
+				w: {east: true, west: true}
+				b: {east: true, west: true}
+			turn: 'white'
+			move: 1
+			log: {}
+			white: game.get(if swap then 'player1' else 'player0')
+			black: game.get(if swap then 'player0' else 'player1')
+			start: Date.now()
+			order: Date.now()
 
 		Event.create
 			unit: 'accept'
 			text: "Chess: #{Plugin.userName()} accepted your challenge"
-			include: [player0]
+			include: [game.get('player0')]
 
-exports.client_move = (from, to) !->
-	gameId = Db.personal(Plugin.userId()).get 'gameId'
+exports.client_comment = (gameId, comment) !->
+	if comment.length > 1000
+		comment = comment.substr(0,1000) + '...'
+	game = Db.shared.ref 'games', gameId
+	logId = game.modify 'logId', (v) -> (v||0)+1
+	game.set 'log', logId, {time: Date.now(), comment: comment, user: Plugin.userId()}
+
+	include = []
+	if game.get('player0') isnt Plugin.userId()
+		include.push game.get('player0')
+	if game.get('player1') isnt Plugin.userId()
+		include.push game.get('player1')
+
+	Event.create
+		unit: 'comment'
+		text: "Chess: #{Plugin.userName()} commented on the game"
+		include: include
+
+
+exports.client_resign = (gameId) !->
+	game = Db.shared.ref 'games', gameId
+	if game.get('turn') and !game.get('winner') and Plugin.userId() in [game.get('white'), game.get('black')]
+		game.merge
+			winner: if Plugin.userId() is game.get('white') then 'black' else 'white'
+			order: Date.now()
+		Event.create
+			unit: 'move'
+			text: "Chess: #{Plugin.userName()} resigned"
+			include: [if Plugin.userId() is game.get('white') then game.get('black') else game.get('white')]
+
+exports.client_move = (gameId, from, to) !->
 	game = Db.shared.ref 'games', gameId
 	turn = game.get('turn')
-	if game.get('state') isnt 'play' or game.get('player'+turn) isnt Plugin.userId()
+	if !turn or game.get(turn) isnt Plugin.userId()
 		return
 
 	board = game.get 'board'
 
 	color = board[from[0]][from[1]]?.charAt(0)
 	piece = board[from[0]][from[1]]?.charAt(1)
-	if color isnt turn
+	if color isnt turn.charAt(0)
 		return
 
-	g = generators[piece](board,from, game)
+	g = generators[piece](board, from, game)
 	while move = g()
 		if move[0] is to[0] and move[1] is to[1]
 			break
@@ -107,15 +128,21 @@ exports.client_move = (from, to) !->
 
 	game.set 'board', to[0], to[1], color + piece
 	game.remove 'board', from[0], from[1]
-	game.set 'log', game.get('move'), turn, text
-	turn = game.modify 'turn', (t) -> if t is 'w' then 'b' else 'w'
-	if turn is 'w'
+	game.set 'last', to
+	game.set 'order', Date.now()
+
+	logId = game.modify 'logId', (v) -> (v||0)+1
+	entry = {m: game.get('move'), t: Date.now()}
+	entry[turn] = text
+	game.set 'log', logId, entry
+	turn = game.modify 'turn', (t) -> if t is 'white' then 'black' else 'white'
+	if turn is 'white'
 		game.modify 'move', (m) -> m+1
 
 	Event.create
 		unit: 'move'
 		text: "Chess: #{Plugin.userName()} moved #{text}"
-		include: [game.get('player'+turn)]
+		include: [game.get(turn)]
 
 metaGenerator = (dirs, depthOfOne) ->
 	(board,base) ->
@@ -174,7 +201,7 @@ makeAttackBoard = (board, color, ownKing) ->
 	for i of board
 		for j of board[i]
 			piece = board[i][j]
-			if piece.charAt(0) isnt color
+			if piece.charAt(0) isnt color.charAt(0)
 				g = generators[piece.charAt(1)](board,[+i,+j])
 				while move = g()
 					(ab[move[0]]||={})[move[1]] = true
