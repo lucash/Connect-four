@@ -152,9 +152,11 @@ renderGame = (gameId) !->
 			Dom.style
 				boxShadow: '0 0 8px #000'
 				width: "#{size*8}px"
-			for i in [7..0] then do (i) !->
+
+			isBlack = game.get('black') is Plugin.userId()
+			for i in (if isBlack then [0..7] else [7..0]) then do (i) !->
 				Dom.div !->
-					for j in [0..7] then do (j) !->
+					for j in (if isBlack then [7..0] else [0..7]) then do (j) !->
 						Dom.div !->
 							Dom.style
 								display: 'inline-block'
