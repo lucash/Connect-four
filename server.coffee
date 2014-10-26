@@ -126,6 +126,10 @@ exports.client_move = (gameId, from, to) !->
 		else if from[1] is 7
 			game.remove 'castling', color, 'east'
 
+	if piece is 'p' and to[0] in [0,7]
+		# simple promotion
+		piece = 'q'
+
 	game.set 'board', to[0], to[1], color + piece
 	game.remove 'board', from[0], from[1]
 	game.set 'last', to
