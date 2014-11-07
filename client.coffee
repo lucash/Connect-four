@@ -8,138 +8,130 @@ Server = require 'server'
 Ui = require 'ui'
 Form = require 'form'
 Time = require 'time'
+Toast = require 'toast'
+Social = require 'social'
+{Chess} = require 'chess'
 {tr} = require 'i18n'
 
-exports.render = ->
-	gameId = Page.state.get(0)
-	if gameId
-		renderGame gameId
-	else
-		renderOverview()
+# input that handles selection of a member
+selectMember = (opts) !->
+	opts ||= {}
+	[handleChange, initValue] = Form.makeInput opts, (v) -> 0|v
 
-renderOverview = !->
-	Dom.h2 tr("Your games")
+	value = Obs.create(initValue)
+	Form.box !->
+		Dom.style fontSize: '125%', paddingRight: '56px'
+		Dom.text opts.title||tr("Selected member")
+		v = value.get()
+		Dom.div !->
+			Dom.style color: (if v then 'inherit' else '#aaa')
+			Dom.text (if v then Plugin.userName(v) else tr("Nobody"))
+		if v
+			Ui.avatar Plugin.userAvatar(v), !->
+				Dom.style position: 'absolute', right: '6px', top: '50%', marginTop: '-20px'
 
-	Ui.list !->
-		Db.shared.iterate 'games', (game) !->
-			Ui.item !->
-				Dom.style
-					display_: 'box'
-					_boxAlign: 'center'
-				turn = game.get('turn')
-				player0 = game.get('player0') is Plugin.userId()
-				player1 = game.get('player1')
-
-				if !turn and player0 and game.get('list1')
-					Dom.div !->
-						Dom.style _boxFlex: 1
-						Dom.text tr("Challenged %1, waiting for a response..", Plugin.userName(game.get('player1')))
-					Ui.button tr("Cancel"), !->
-						Server.call 'cancel', game.key()
-
-				else if !turn and player0
-					Dom.div !->
-						Dom.style _boxFlex: 1
-						Dom.text tr("%1 did not accept the game")
-					Ui.button tr("Ok"), !->
-						Server.call 'cancel', game.key()
-
-				else if !turn
-					Dom.div !->
-						Dom.style _boxFlex: 1
-						Dom.text tr("%1 challenged you. Accept?", Plugin.userName(game.get('player0')))
-					Ui.button tr("Yes"), !->
-						Server.call 'accept', game.key()
-					Ui.button tr("No"), !->
-						Server.call 'cancel', game.key()
-
-				else
-					Dom.div !->
-						Dom.style _boxFlex: 1
-						Dom.span !->
-							Dom.text Plugin.userName(game.get('white'))
-							Dom.style
-								fontWeight: if game.get('turn') is 'white' then 'bold' else 'normal'
-						Dom.text ' vs '
-						Dom.span !->
-							Dom.text Plugin.userName(game.get('black'))
-							Dom.style
-								fontWeight: if game.get('turn') is 'black' then 'bold' else 'normal'
-
-						Dom.div !->
-							Dom.style
-								display: 'inline-block'
-								margin: '0 0 0 8px'
-								fontSize: '85%'
-							Time.deltaText game.get('order')*.001
-
-					Dom.div !->
-						if game.get(game.get('turn')) is Plugin.userId()
-							Dom.style
-								color: Plugin.colors().highlight
-							Dom.text tr("Your move!")
-
-					Dom.onTap !->
-						Page.nav game.key()
-			
-		, (game) ->
-			if Plugin.userId() in [game.get('list0'), game.get('list1')]
-				-game.get('order')
-	
-	Ui.bigButton tr("New game"), !->
-		Modal.show tr("Challenge opponent"), !->
-			Dom.style width: '80%'
-			Ui.list !->
-				Dom.style
-					maxHeight: '40%'
-					overflow: 'auto'
-					_overflowScrolling: 'touch'
-					backgroundColor: '#eee'
-					margin: '-12px -12px -15px -12px'
-				Plugin.users.iterate (user) !->
-					Ui.item !->
-						Ui.avatar user.get('avatar')
-						Dom.text user.get('name')
-						Dom.onTap !->
-							Modal.remove()
-							Server.call 'challenge', user.key()
-				, (user) ->
-					if +user.key() != Plugin.userId()
-						user.get('name')
-		, false, ['cancel', tr("Cancel")]
-
-	Dom.h2 "Other games"
-
-	Ui.list !->
-		Db.shared.iterate 'games', (game) !->
-			Ui.item !->
-				Dom.span !->
-					Dom.text Plugin.userName(game.get('white'))
-					Dom.style
-						fontWeight: if game.get('turn') is 'white' then 'bold' else 'normal'
-				Dom.text ' vs '
-				Dom.span !->
-					Dom.text Plugin.userName(game.get('black'))
-					Dom.style
-						fontWeight: if game.get('turn') is 'black' then 'bold' else 'normal'
-
+		Dom.onTap !->
+			Modal.show opts.selectTitle||tr("Select member"), !->
+				Dom.style width: '80%'
 				Dom.div !->
 					Dom.style
-						display: 'inline-block'
-						margin: '0 0 0 8px'
-						fontSize: '85%'
-					Time.deltaText game.get('order')*.001
+						maxHeight: '40%'
+						overflow: 'auto'
+						_overflowScrolling: 'touch'
+						backgroundColor: '#eee'
+						margin: '-12px'
 
-				Dom.onTap !->
-					Page.nav game.key()
-		, (game) ->
-			if game.get('turn') and Plugin.userId() not in [game.get('black'), game.get('white')]
-				true
+					Plugin.users.iterate (user) !->
+						Ui.item !->
+							Ui.avatar user.get('avatar')
+							Dom.text user.get('name')
 
-renderGame = (gameId) !->
-	game = Db.shared.ref('games', gameId)
-	selected = Obs.create()
+							if +user.key() is +value.get()
+								Dom.style fontWeight: 'bold'
 
+								Dom.div !->
+									Dom.style
+										Flex: 1
+										padding: '0 10px'
+										textAlign: 'right'
+										fontSize: '150%'
+										color: Plugin.colors().highlight
+									Dom.text "✓"
+
+							Dom.onTap !->
+								handleChange user.key()
+								value.set user.key()
+								Modal.remove()
+			, (choice) !->
+				log 'choice', choice
+				if choice is 'clear'
+					handleChange ''
+					value.set ''
+			, ['cancel', tr("Cancel"), 'clear', tr("Clear")]
+
+exports.renderSettings = !->
+	if Db.shared
+		Dom.text tr("Game has already started")
+
+	else
+		selectMember
+			name: 'opponent'
+			title: tr("Opponent")
+
+exports.render = !->
+	if Db.shared.get('waitWhite') && Db.shared.get('white') is Plugin.userId()
+		renderChallenge 'white'
+
+	else if Db.shared.get('waitBlack') && Db.shared.get('black') is Plugin.userId()
+		renderChallenge 'black'
+
+	else if !Db.shared.get('waitWhite') && !Db.shared.get('waitBlack')
+		renderGame()
+
+	else
+		renderWait()
+
+renderChallenge = !->
+	Dom.div !->
+		Dom.text tr("You are challenged. Accept?")
+		Ui.bigButton tr("Accept"), !->
+			Server.call 'accept'
+
+
+renderWait = !->
+	Dom.div !->
+		Dom.style
+			padding: '8px'
+			textAlign: 'center'
+			fontSize: '120%'
+		Dom.text tr("Waiting for opponent to accept...")
+
+
+renderGame = !->
+	chess = new Chess(Db.shared.ref('game'))
+	dbg.chess = chess
+
+	isBlack = Db.shared.get('black') is Plugin.userId() and Db.shared.get('white') isnt Plugin.userId()
+
+	renderSide = (side) !->
+		Dom.div !->
+			Dom.style
+				textAlign: 'center'
+				fontSize: '130%'
+				padding: '8px 0'
+			Dom.text Plugin.userName(Db.shared.get(side))
+
+			if chess.result.get() is side
+				Dom.text " - wins!"
+
+			if chess.result.get() is 'draw'
+				Dom.text " - draw"
+
+			else if chess.turn.get() is side
+				Dom.text " - to move"
+
+	renderSide if isBlack then 'white' else 'black'
+	
 	Dom.div !->
 		Dom.style
 			display_: 'box'
@@ -147,31 +139,32 @@ renderGame = (gameId) !->
 			_boxPack: 'center'
 			margin: '4px 0'
 
+		selected = Obs.create {}
+
 		Dom.div !->
 			size = 0|Math.max(200, Math.min(Dom.viewport.get('width')-16, 480)) / 8
 			Dom.style
 				boxShadow: '0 0 8px #000'
 				width: "#{size*8}px"
 
-			isBlack = game.get('black') is Plugin.userId()
-			for i in (if isBlack then [0..7] else [7..0]) then do (i) !->
+			for y,yi in (if isBlack then '12345678' else '87654321') then do (y,yi) !->
 				Dom.div !->
-					for j in (if isBlack then [7..0] else [0..7]) then do (j) !->
+					for x,xi in (if isBlack then 'hgfedcba' else 'abcdefgh') then do (x,xi) !->
 						Dom.div !->
 							Dom.style
 								display: 'inline-block'
 								height: "#{size}px"
 								width: "#{size}px"
-								background: if (s=selected.get()) and s[0] is i and s[1] is j
+								background: if selected.get(x+y)
 										Plugin.colors().highlight
-									else if (last=game.get('last')) and last[0] is i and last[1] is j
+									else if chess.last.get(1) is x+y
 										'#aaf'
-									else if (j%2)!=(i%2)
+									else if ((xi%2)!=(yi%2)) == isBlack
 										'white'
 									else
 										'black'
 
-							if piece = game.get('board', i, j)
+							if piece = chess.board.get(x+y)
 								Dom.div !->
 									Dom.style
 										height: '100%'
@@ -180,132 +173,54 @@ renderGame = (gameId) !->
 										backgroundSize: "#{0|size*.75}px"
 
 							Dom.onTap !->
-								if game.get(game.get('turn')) is Plugin.userId()
-									s=selected.get()
-									if s
-										if s[0] isnt i or s[1] isnt j
-											Server.call 'move', game.key(), s, [i,j]
-										selected.set null
+								from = false
+								for k of selected.get()
+									from = k
+									break
 
-									else if piece and piece.charAt(0) is game.get('turn').charAt(0)
-										selected.set [i,j]
+								if piece and piece[0] is chess.turn.get()[0] and !from
+									selected.set x+y, true
+								else if from and from isnt x+y
+									log 'move', from, '>', x+y
+									type = chess.canMove from, x+y
+									if type is 'promotion'
+										t = chess.turn.get()[0]
+										choosePiece [t+'q',t+'r',t+'b',t+'n'], (piece) ->
+											if piece
+												Server.sync 'move', from, x+y, piece[1], !->
+													chess.move from, x+y, piece[1]
+									else if type
+										Server.sync 'move', from, x+y, !->
+											chess.move from, x+y
+									else
+										Toast.show tr("Invalid move :(")
 
+									selected.set {}
+								else
+									selected.set {}
 
-	Dom.div !->
-		Dom.style
-			margin: '8px 0'
-			fontSize: '125%'
-			textAlign: 'center'
-		if winner = game.get('winner')
-			winner = game.get(game.get('winner'))
-			if winner is Plugin.userId()
-				who = tr("You")
-			else
-				who = Plugin.userName(winner)
+	renderSide if isBlack then 'black' else 'white'
 
-			Dom.text tr("%1 won!", who)
-
-			if Plugin.userId() in [game.get('white'), game.get('black')]
-				Ui.button !->
-					Dom.text tr("Ok")
-				, !->
-					Server.call 'cancel', game.key()
-					Page.back()
-
-		else
-			turn = game.get('turn')
-			
-			if game.get(turn) is Plugin.userId()
-				Dom.text tr("Your turn - move a %1 piece, or", turn)
-			else
-				Dom.text tr("%1's turn", Plugin.userName(game.get(turn)))
-			selected.set null
-
-			if Plugin.userId() in [game.get('white'), game.get('black')]
-				Ui.button !->
-					Dom.text tr("Resign")
-				, !->
-					Server.call 'resign', game.key()
-
-				#Ui.bigButton tr("Offer draw"), !->
-				#	Server.call 'xx'
+	Social.renderComments()
 	
-	editingItem = Obs.create(false)
-	Dom.div !->
-		Dom.style display_: 'box', _boxAlign: 'center'
 
-		addE = null
-		save = !->
-			return if !addE.value().trim()
-			Server.sync 'comment', game.key(), addE.value().trim()
-			addE.value ""
-			editingItem.set(false)
-			Form.blur()
-
-		Ui.avatar Plugin.userAvatar()
-
-		Dom.section !->
-			Dom.style display_: 'box', _boxFlex: 1, _boxAlign: 'center'
+choosePiece = (pieces, cb) !->
+	require('modal').show tr("Choose piece"), !->
+		pieces.forEach (piece) !->
 			Dom.div !->
-				Dom.style _boxFlex: 1
-				log 'rendering form.text'
-				addE = Form.text
-					autogrow: true
-					name: 'comment'
-					text: tr("Add a comment")
-					simple: true
-					onChange: (v) !->
-						editingItem.set(!!v?.trim())
-					onReturn: save
-					inScope: !->
-						Dom.prop 'rows', 1
-						Dom.style
-							border: 'none'
-							width: '100%'
-							fontSize: '100%'
-
-			Ui.button !->
 				Dom.style
-					marginRight: 0
-					visibility: (if editingItem.get() then 'visible' else 'hidden')
-				Dom.text tr("Add")
-			, save
+					display: 'inline-block'
+					height: '40px'
+					width: '40px'
+					margin: '4px'
+					background: "url(#{Plugin.resourceUri piece+'.png'}) no-repeat 50% 50%"
+					backgroundSize: '32px'
 
-	Dom.section !->
-		game.iterate 'log', (entry) !->
-			Dom.div !->
-				if whiteMove = entry.get('white')
-					Dom.style
-						margin: '10px 0'
-						fontFamily: 'monospace'
-					Dom.div !->
-						Dom.style
-							display: 'inline-block'
-							width: '38px'
-							fontSize: '85%'
-							fontWeight: 'bold'
-						Dom.text entry.get('m')||''
-					Dom.div !->
-						Dom.style display: 'inline-block', padding: '6px'
-						Dom.text whiteMove
-
-				else if blackMove = entry.get('black')
-					Dom.style
-						fontFamily: 'monospace'
-						margin: '-10px 0 -10px 90px'
-					Dom.div !->
-						Dom.style display: 'inline-block', padding: '6px'
-						Dom.text blackMove
-
-				else if comment = entry.get('comment')
-					Dom.style
-						margin: '6px 0 6px 0'
-						display_: 'box'
-						_boxAlign: 'center'
-					Ui.avatar Plugin.userAvatar(entry.get('user')), !->
-					Dom.div !->
-						Dom.style _boxFlex: 1
-						Dom.text comment
-		, (entry) -> -entry.key()
+				Dom.onTap !->
+					require('modal').remove()
+					cb(piece)
+	, !->
+		cb()
+	, ['cancel', tr("Cancel")]
 
 
