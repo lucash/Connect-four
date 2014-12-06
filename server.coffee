@@ -1,7 +1,7 @@
 Db = require 'db'
 Plugin = require 'plugin'
 Event = require 'event'
-{Chess} = require 'chess'
+Chess = require 'chess'
 
 exports.onInstall = (config) !->
 	if config and config.opponent
@@ -10,22 +10,33 @@ exports.onInstall = (config) !->
 			else
 				{black: Plugin.userId(), white: config.opponent}
 	if config and config.white and config.black
+		challenge = {}
+		challenge[+config.white] = true
+		challenge[+config.black] = true
 		Db.shared.set
 			white: +config.white
 			black: +config.black
-			waitWhite: true
-			waitBlack: true
-
-		accept(Plugin.userId())
+			challenge: challenge
 
 		Event.create
 			unit: 'game'
 			text: "Chess: #{Plugin.userName()} wants to play"
-			for: [+config.white, +config.black]
+			#text_you: "Chess: you challenged #{xx}"
+			for: x=[+config.white, +config.black]
 			new: [-Plugin.userId()]
 
+		accept(Plugin.userId())
+			# todo: this currently shows some error due to a framework Db issue
+
+exports.onUpgrade = !->
+	if !Db.shared.get('board') and game=Db.shared.get('game')
+		# version 2.0 clients had their data in /game
+		log 'upgrading'
+		Db.shared.merge game
+		# we'll let the old data linger
+
 exports.onConfig = !->
-	# todo
+	# currently, no config can be changed
 
 exports.getTitle = ->
 	Plugin.userName(Db.shared.get('white')) + ' vs ' + Plugin.userName(Db.shared.get('black'))
@@ -35,32 +46,25 @@ exports.client_accept = !->
 
 accept = (userId) !->
 	log 'accept', userId
-	waitWhite = Db.shared.get('waitWhite')
-	waitBlack = Db.shared.get('waitBlack')
-	if waitWhite || waitBlack
-		if userId is Db.shared.get('white')
-			Db.shared.remove 'waitWhite'
-			waitWhite = false
-		if userId is Db.shared.get('black')
-			Db.shared.remove 'waitBlack'
-			waitBlack = false
-
-		if !waitWhite && !waitBlack
-			log 'game begin'
-			Event.create
-				unit: 'game'
-				text: "Game has begun!"
-				for: [Db.shared.get('white'), Db.shared.get('black')]
-				new: [-userId]
-			Db.shared.set 'game', require('chess').setup()
+	Db.shared.remove 'challenge', userId
+	if !Object.keys(Db.shared.get('challenge')).length # objEmpty(...)
+		log 'game begin'
+		Db.shared.remove 'challenge'
+		Event.create
+			unit: 'game'
+			text: "Chess game has begun!"
+			for: [Db.shared.get('white'), Db.shared.get('black')]
+		Chess.init()
 
 exports.client_move = (from, to, promotionPiece) !->
 	game = Db.shared.ref('game')
-	(new Chess(game)).move from, to, promotionPiece
+	if Db.shared.get(Db.shared.get('turn')) is Plugin.userId()
+		m = Chess.move from, to, promotionPiece
 
-	Event.create
-		unit: 'move'
-		text: "Chess: #{Plugin.userName()} moved"
-		for: [Db.shared.get('white'), Db.shared.get('black')]
-		new: [-Plugin.userId()]
+		Event.create
+			unit: 'move'
+			text: "Chess: #{Plugin.userName()} moved #{m}"
+			#text_you: "Chess: you moved #{m}"
+			for: [Db.shared.get('white'), Db.shared.get('black')]
+			new: [-Plugin.userId()]
 
