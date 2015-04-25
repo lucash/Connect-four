@@ -15,6 +15,7 @@ initializeGame = (config) !->
 		challenge = {}
 		challenge[+config.red] = true
 		challenge[+config.yellow] = true
+		wins = Db.shared.get('wins')
 		Db.shared.set
 			red: +config.red
 			yellow: +config.yellow
@@ -22,6 +23,7 @@ initializeGame = (config) !->
 			columns: {}
 			turn: 'red'
 			winner: null
+			wins: wins
 
 		Event.create
 			unit: 'game'
@@ -31,6 +33,16 @@ initializeGame = (config) !->
 
 		accept(Plugin.userId())
 			# todo: this currently shows some error due to a framework Db issue
+
+addWin = (userId) !->
+	wins = Db.shared.ref('wins')
+	if !wins?
+		Db.shared.set('wins', {})
+	if !wins.get(userId)
+		wins.set(userId, 0)
+	wins.modify userId, (count) !-> 
+		log count, count+1
+		return count+1
 
 exports.onUpgrade = !->
 
@@ -69,8 +81,10 @@ exports.client_add = (column) !->
 	if columnContainsFour(column) or rowContainsFour(itemCount) or diagonalContainsFour(column, itemCount)
 		if Db.shared.get('turn') is 'red'
 			Db.shared.set('winner', Db.shared.get('red'))
+			addWin(Db.shared.get('red'))
 		else
 			Db.shared.set('winner', Db.shared.get('yellow'))
+			addWin(Db.shared.get('yellow'))
 	else
 		if Db.shared.get('turn') is 'red'
 			Db.shared.set('turn', 'yellow')
