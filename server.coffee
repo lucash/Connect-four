@@ -53,10 +53,10 @@ exports.client_add = (column) !->
 	columns = Db.shared.ref('columns')
 	
 	if !(columns.get(column)?)
-		itemCount = 0;
+		itemCount = 0
 		columns.set(column, {})
 	else
-		itemCount = Object.keys(columns.get(column)).length;
+		itemCount = Object.keys(columns.get(column)).length
 	
 	if itemCount < 6
 		columns.ref(column).set(itemCount, Db.shared.get('turn'))
@@ -162,7 +162,7 @@ diagonalContainsFour = (column, row) !->
 		return true
 
 getField = (column, row) !->
-	columns = Db.shared.ref('columns');
+	columns = Db.shared.ref('columns')
 	if columns.get(column) and columns.ref(column).get(row)
 		return columns.ref(column).get(row)
 
@@ -174,7 +174,6 @@ accept = (userId) !->
 		Db.shared.remove 'challenge'
 		Event.create
 			unit: 'game'
-			text: "Chess game has begun!"
-			for: [Db.shared.get('white'), Db.shared.get('black')]
-		#Chess.init()
+			text: "Connect four game has begun!"
+			for: [Db.shared.get('red'), Db.shared.get('yellow')]
 
