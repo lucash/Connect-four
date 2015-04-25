@@ -147,7 +147,6 @@ diagonalContainsFour = (column, row) !->
 	column = origColumn
 	row = origRow
 	# left top
-	log currentTurn, column, row, getField(column, row)
 	while (getField(column, row) is currentTurn)
 		count++
 		column--
@@ -162,7 +161,6 @@ diagonalContainsFour = (column, row) !->
 		column++
 		row--
 	
-	log count
 	if count >= 4
 		return true
 
