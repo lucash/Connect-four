@@ -119,6 +119,9 @@ exports.render = !->
 							last = Db.shared.get('last')
 							if column is last.column and row is last.row
 								Dom.cls 'last'
+						if isUserTurn() and not columns.ref(column).get(5) and not Db.shared.get('winner')?
+							Dom.onTap !->
+								Server.call 'add', column
 
 	Social.renderComments()
 
