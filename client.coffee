@@ -48,8 +48,15 @@ exports.render = !->
 				textAlign: 'center'
 				fontSize: '120%'
 
-			Dom.text tr("%1 (red) vs %2 (yellow)",
-				Plugin.userName(redId), Plugin.userName(yellowId))
+			Dom.div !->
+				Dom.span !->
+					Dom.cls 'red'
+					Dom.text Plugin.userName(redId)
+				Dom.span !->
+					Dom.text ' vs. '
+				Dom.span !->
+					Dom.cls 'yellow'
+					Dom.text Plugin.userName(yellowId)
 
 			if challenge[Plugin.userId()]
 				if Db.shared.get('red') is Plugin.userId()
@@ -242,7 +249,7 @@ Dom.css
 		textAlign: 'center'
 		fontSize: '1.5em'
 		padding: '0.5em'
-	'.turn.yellow':
+	'.yellow':
 		color: 'yellow'
-	'.turn.red':
+	'.red':
 		color: 'red'
