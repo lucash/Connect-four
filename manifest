@@ -1,4 +1,4 @@
-name: Chess
-description: Challenge your friends for a game of chess.
+name: Connect four
+description: Challenge your friends for a game of connect four.
 store: 100
 api: 2

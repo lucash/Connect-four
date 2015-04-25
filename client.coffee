@@ -9,7 +9,6 @@ Ui = require 'ui'
 Form = require 'form'
 Time = require 'time'
 Social = require 'social'
-Chess = require 'chess'
 {tr} = require 'i18n'
 
 exports.renderSettings = !->
@@ -21,13 +20,26 @@ exports.renderSettings = !->
 			name: 'opponent'
 			title: tr("Opponent")
 
+isUserTurn = !->
+  redId = Db.shared.get('red')
+  yellowId = Db.shared.get('yellow')
+  turn = Db.shared.get('turn')
+  return (Plugin.userId() is redId and turn is 'red') or (Plugin.userId() is yellowId and turn is 'yellow')
+
+getOpponentName = !->
+	if Plugin.userId() is Db.shared.get('red')
+		return Plugin.userName(Db.shared.get('yellow'))
+	else
+		return Plugin.userName(Db.shared.get('red'))
+
 exports.render = !->
-	whiteId = Db.shared.get('white')
-	blackId = Db.shared.get('black')
-	color = if Plugin.userId() is whiteId
-			'white'
-		else if Plugin.userId() is blackId
-			'black'
+
+	redId = Db.shared.get('red')
+	yellowId = Db.shared.get('yellow')
+	color = if Plugin.userId() is redId
+			'red'
+		else if Plugin.userId() is yellowId
+			'yellow'
 
 	if challenge=Db.shared.get('challenge')
 		Dom.div !->
@@ -36,12 +48,16 @@ exports.render = !->
 				textAlign: 'center'
 				fontSize: '120%'
 
-			Dom.text tr("%1 (white) vs %2 (black), no time limit",
-				Plugin.userName(whiteId), Plugin.userName(blackId))
+			Dom.text tr("%1 (red) vs %2 (yellow)",
+				Plugin.userName(redId), Plugin.userName(yellowId))
 
 			if challenge[Plugin.userId()]
-				Dom.div tr("%1 challenged you for a game of Chess.", Plugin.userName(Plugin.ownerId()))
-
+				if Db.shared.get('red') is Plugin.userId()
+					challenger = Db.shared.get('yellow')
+				else
+					challenger = Db.shared.get('red')
+				Dom.div tr("%1 challenged you for a game of connect four.", Plugin.userName(challenger))
+				
 				Ui.bigButton tr("Accept"), !->
 					Server.call 'accept'
 
@@ -50,154 +66,51 @@ exports.render = !->
 				Dom.div tr("Waiting for %1 to accept...", Plugin.userName(id))
 
 	else
-
-		isBlack = Db.shared.get('black') is Plugin.userId() and Db.shared.get('white') isnt Plugin.userId()
-
-		renderSide = (side) !->
+		if Db.shared.get('winner')?
 			Dom.div !->
-				Dom.style
-					textAlign: 'center'
-					fontSize: '130%'
-					padding: '8px 0'
-					color: 'inherit'
-					fontWeight: 'normal'
-				id = Db.shared.get(side)
-				if id is Plugin.userId()
-					Dom.text tr("You")
+				Dom.cls 'finished'
+				if Db.shared.get('winner') is Plugin.userId()
+					Dom.cls 'winner'
+					Dom.text 'You won'
+				else if Plugin.userId() is Db.shared.get('red') or Plugin.userId() is Db.shared.get('yellow')
+					Dom.cls 'looser'
+					Dom.text 'You lost'
 				else
-					Dom.text Plugin.userName(id)
-
-				if result = Db.shared.get('result')
-					Dom.style fontWeight: 'bold'
-					if result is side
-						Dom.text " - wins!"
-					else if result is 'draw'
-						Dom.text " - draw"
-					else if result
-						Dom.text " - lost"
-
-				else if Db.shared.get('turn') is side
-					if id is Plugin.userId()
-						Dom.style color: Plugin.colors().highlight, fontWeight: 'bold'
-					Dom.text " - to move"
-
-		renderSide if isBlack then 'white' else 'black'
+					Dom.cls 'neutral'
+					Dom.text Plugin.userName(Db.shared.get('winner')) + ' won the game'
+			if Plugin.userId() is Db.shared.get('red') or Plugin.userId() is Db.shared.get('yellow')
+				Ui.bigButton "New game", !->
+					Server.call 'reset'
 		
-		Dom.div !->
-			Dom.style
-				display_: 'box'
-				_boxAlign: 'center'
-				_boxPack: 'center'
-				margin: '4px 0'
-
-			selected = Obs.create false
-			markers = Obs.create {}
-				# chess field index indicating last-moved-piece, king-under-attack, selected, possible-move
-		
-			Obs.observe !->
-				if last=Db.shared.get('last')
-					markers.set last[0], 'last'
-					markers.set last[1], 'last'
-
-				if check = Chess.isCheck(Db.shared.get('board'), Db.shared.get('turn')?[0])
-					markers.set check, 'check'
-
-				if s = selected.get()
-					markers.set s, 'selected'
-					for square of Chess.find(s)
-						markers.set square, 'move'
-
-				Obs.onClean !->
-					markers.set {}
-
+		if not Db.shared.get('winner')?
 			Dom.div !->
-				size = 0|Math.max(200, Math.min(Dom.viewport.get('width')-16, 480)) / 8
-				Dom.cls 'board'
-				Dom.style
-					width: "#{size*8}px"
-		
-				(if isBlack then '12345678' else '87654321').split('').forEach (y,yi) !->
+				Dom.cls 'turn'
+				Dom.cls Db.shared.get('turn')
+				if isUserTurn()
+					Dom.text 'It\'s your turn'
+				else
+					Dom.text 'Waiting for ' + getOpponentName()
+		Dom.div !->
+			Dom.cls 'board'
+			columns = Db.shared.ref("columns")
+			[0,1,2,3,4,5,6].forEach (column) !->
+				Dom.div !->
+					Dom.cls 'columnselection'
+					Dom.cls 'column'
+					if isUserTurn() and not columns.ref(column).get(5) and not Db.shared.get('winner')?
+						Dom.cls 'active'
+						Dom.onTap !->
+							Server.call 'add', column
+			[0,1,2,3,4,5].forEach (row) !->
+				row = 5 - row
+				[0,1,2,3,4,5,6].forEach (column) !->
 					Dom.div !->
-						(if isBlack then 'hgfedcba' else 'abcdefgh').split('').forEach (x,xi) !->
-							Dom.div !->
-								Dom.cls 'square'
-								Dom.cls if (xi%2)==(yi%2) then 'white' else 'black'
-
-								piece = Db.shared.get('board', x+y)
-
-								if marker = markers.get(x+y)
-									Dom.div !->
-										blue = marker in ['last', 'check']
-										Dom.style
-											position: 'absolute'
-											width: if piece then '90%' else '50%'
-											height: if piece then '90%' else '50%'
-											left: if piece then '5%' else '25%'
-											top: if piece then '5%' else '25%'
-											background: if marker in ['last', 'check']
-													Plugin.colors().bar
-												else
-													Plugin.colors().highlight
-											opacity: if marker is 'last' then .6 else 1
-											borderRadius: '999px'
-
-								if piece
-									Dom.div !->
-										Dom.style
-											position: 'absolute'
-											left: 0
-											top: 0
-											width: '100%'
-											height: '100%'
-											background: "url(#{Plugin.resourceUri piece+'.png'}) no-repeat 50% 50%"
-											backgroundSize: "#{0|size*.75}px"
-
-								Dom.onTap !->
-									turn = Db.shared.get('turn')
-									if turn is color
-										s = selected.get()
-										if !s and piece and piece[0] is turn[0]
-											selected.set x+y
-											return
-
-										if s and s isnt x+y and Db.shared.peek('board', x+y)?[0] isnt turn[0]
-											log 'move', s, '>', x+y
-											type = Chess.canMove(s, x+y)
-											if type is 'promotion'
-												t = turn[0]
-												choosePiece [t+'q',t+'r',t+'b',t+'n'], (piece) ->
-													Server.call 'move', s, x+y, piece[1] if piece
-											else if type
-												Server.call 'move', s, x+y
-											else if markers.get(x+y) is 'move'
-												# we had a move marker here, but cant move here because we are checked or will be in check
-												require('toast').show tr("Invalid move - you are checked!")
-
-									selected.set false
-
-		renderSide if isBlack then 'black' else 'white'
+						Dom.cls 'square'
+						Dom.cls 'column'
+						if columns.get(column)? and columns.ref(column).get(row)?
+								Dom.cls columns.ref(column).get(row)
 
 	Social.renderComments()
-	
-
-choosePiece = (pieces, cb) !->
-	require('modal').show tr("Choose piece"), !->
-		pieces.forEach (piece) !->
-			Dom.div !->
-				Dom.style
-					display: 'inline-block'
-					height: '40px'
-					width: '40px'
-					margin: '4px'
-					background: "url(#{Plugin.resourceUri piece+'.png'}) no-repeat 50% 50%"
-					backgroundSize: '32px'
-
-				Dom.onTap !->
-					require('modal').remove()
-					cb(piece)
-	, !->
-		cb()
-	, ['cancel', tr("Cancel")]
 
 
 # input that handles selection of a member
@@ -259,13 +172,77 @@ selectMember = (opts) !->
 Dom.css
 	'.board':
 		boxShadow: '0 0 8px #000'
-	'.square':
-		display: 'inline-block'
-		width: '12.5%'
-		padding: '12.5% 0 0' # use padding-top trick to maintain aspect ratio
+	'.column':
+		width: '14.28%'
+		boxSizing: 'border-box'
 		position: 'relative'
-	'.square.white':
-		backgroundColor: 'rgb(244,234,193)'
-	'.square.black':
-		backgroundColor: 'rgb(223,180,135)'
-
+		display: 'inline-block'
+	'.square':
+		padding: '14.28% 0 0' # use padding-top trick to maintain aspect ratio
+		border: '1px solid whitesmoke'
+		background: 'darkgrey'
+	'.square:before':
+		content: '\' \''
+		position: 'absolute'
+		
+		width: '80%'
+		height: '80%'
+		
+		marginLeft: '10%'
+		marginTop: '10%'
+		
+		borderRadius: '100000px'
+		background: 'white none repeat scroll 0% 0%'
+		top: '0'
+		left: '0'
+	'.square.yellow:before':
+		background: 'yellow'
+	'.square.red:before':
+		background: 'red'
+	'.columnselection.active':
+		cursor: 'pointer'
+	'.columnselection.active:after':
+		borderTopColor: '#0077CF'
+	'.columnselection':
+		height: '0'
+		marginBottom: '30px'
+		border: '1px solid transparent'
+	'.columnselection:after':
+		content: '\' \''
+		top: '100%'
+		left: '50%'
+		border: 'solid transparent'
+		height: '0'
+		width: '0'
+		position: 'absolute'
+		borderColor: 'transparent'
+		borderTopColor: 'grey'
+		borderWidth: '20px'
+		marginLeft: '-20px'
+	'.finished':
+		boxShadow: '0px 0px 10px'
+		textAlign: 'center'
+		fontSize: '5em'
+		fontWeight: 'bold'
+		border: '2px solid'
+		textShadow: '3px 3px 5px'
+		marginBottom: '10px'
+	'.finished.winner':
+		color: 'green'
+		borderColor: 'green'
+	'.finished.looser':
+		color: 'red'
+		borderColor: 'red'
+	'.finished.neutral':
+		color: 'grey'
+		borderColor: 'grey'
+		fontSize: '2em'
+		padding: '1em'
+	'.turn':
+		textAlign: 'center'
+		fontSize: '1.5em'
+		padding: '0.5em'
+	'.turn.yellow':
+		color: 'yellow'
+	'.turn.red':
+		color: 'red'
