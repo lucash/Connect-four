@@ -61,6 +61,11 @@ exports.client_add = (column) !->
 	if itemCount < 6
 		columns.ref(column).set(itemCount, Db.shared.get('turn'))
 	
+	Db.shared.set('last', {
+		column: column,
+		row: itemCount
+	})
+	
 	if columnContainsFour(column) or rowContainsFour(itemCount) or diagonalContainsFour(column, itemCount)
 		if Db.shared.get('turn') is 'red'
 			Db.shared.set('winner', Db.shared.get('red'))

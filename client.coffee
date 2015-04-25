@@ -115,7 +115,10 @@ exports.render = !->
 						Dom.cls 'square'
 						Dom.cls 'column'
 						if columns.get(column)? and columns.ref(column).get(row)?
-								Dom.cls columns.ref(column).get(row)
+							Dom.cls columns.ref(column).get(row)
+							last = Db.shared.get('last')
+							if column is last.column and row is last.row
+								Dom.cls 'last'
 
 	Social.renderComments()
 
@@ -206,6 +209,8 @@ Dom.css
 		background: 'yellow'
 	'.square.red:before':
 		background: 'red'
+	'.square.last':
+		background: 'lightgrey'
 	'.columnselection.active':
 		cursor: 'pointer'
 	'.columnselection.active:after':
